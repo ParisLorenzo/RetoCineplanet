@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useParams } from "react-router-dom";
-import { Check } from "lucide-react";
+import { Check, Plus, Minus, Sparkles } from "lucide-react";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/firebase";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import CheckoutSnacks, { SnackOrder } from "@/components/CheckoutSnacks";
 import canchitaImg from "@/assets/canchita.png";
 
 const STEPS = ["Asientos", "Snacks", "Pago", "Confirmación"];
@@ -21,10 +22,29 @@ interface PaymentErrors {
   general?: string;
 }
 
+type FirebaseSnack = {
+  id: string;
+  name: string;
+  priceNum: number;
+  image: string;
+  description: string;
+  category: string;
+};
+
+export type SnackOrder = {
+  id: string;
+  name: string;
+  priceNum: number;
+  qty: number;
+  image?: string;
+};
+
 const Checkout = () => {
   const { movieId } = useParams();
   const [step, setStep] = useState(0);
   const [snacks, setSnacks] = useState<Record<string, SnackOrder>>({});
+  const [availableSnacks, setAvailableSnacks] = useState<FirebaseSnack[]>([]);
+  const [loadingSnacks, setLoadingSnacks] = useState(true);
   const [isPaying, setIsPaying] = useState(false);
   const [transactionId, setTransactionId] = useState("");
   const [operationDate, setOperationDate] = useState("");
@@ -36,7 +56,9 @@ const Checkout = () => {
   const [expiry, setExpiry] = useState("");
   const [cvv, setCvv] = useState("");
   const [email, setEmail] = useState(user?.email || "");
-  const [name, setName] = useState(user?.name && user.name !== "Invitado" ? user.name : "");
+  const [name, setName] = useState(
+    user?.name && user.name !== "Invitado" ? user.name : ""
+  );
   const [documentType, setDocumentType] = useState("DNI");
   const [documentNumber, setDocumentNumber] = useState("");
   const [paymentErrors, setPaymentErrors] = useState<PaymentErrors>({});
@@ -68,15 +90,65 @@ const Checkout = () => {
     if (user?.name && user.name !== "Invitado") setName(user.name);
   }, [user]);
 
+  useEffect(() => {
+    const fetchSnacks = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, "candystore"));
+        const data: FirebaseSnack[] = querySnapshot.docs.map((doc) => {
+          const raw = doc.data();
+          return {
+            id: doc.id,
+            name: raw.name || "Snack",
+            priceNum: Number(raw.price || 0),
+            image: raw.image || "",
+            description: raw.description || "Disponible para tu función",
+            category: raw.category || "Snack",
+          };
+        });
+        setAvailableSnacks(data);
+      } catch (error) {
+        console.error("Error cargando snacks:", error);
+      } finally {
+        setLoadingSnacks(false);
+      }
+    };
+
+    fetchSnacks();
+  }, []);
+
+  const updateSnackQty = (snack: FirebaseSnack, delta: number) => {
+    setSnacks((prev) => {
+      const current = prev[snack.id];
+      const nextQty = (current?.qty || 0) + delta;
+      const next = { ...prev };
+
+      if (nextQty <= 0) {
+        delete next[snack.id];
+      } else {
+        next[snack.id] = {
+          id: snack.id,
+          name: snack.name,
+          priceNum: snack.priceNum,
+          qty: nextQty,
+          image: snack.image,
+        };
+      }
+
+      return next;
+    });
+  };
+
   const validatePayment = (): PaymentErrors => {
     const e: PaymentErrors = {};
     const cleanCard = cardNumber.replace(/\s/g, "");
 
     if (!cardNumber.trim()) e.cardNumber = "Ingresa el número de tarjeta";
-    else if (!/^\d{16}$/.test(cleanCard)) e.cardNumber = "La tarjeta debe tener 16 dígitos";
+    else if (!/^\d{16}$/.test(cleanCard))
+      e.cardNumber = "La tarjeta debe tener 16 dígitos";
 
     if (!expiry.trim()) e.expiry = "Ingresa la fecha de expiración";
-    else if (!/^\d{2}\/\d{2}$/.test(expiry)) e.expiry = "Usa el formato MM/AA";
+    else if (!/^\d{2}\/\d{2}$/.test(expiry))
+      e.expiry = "Usa el formato MM/AA";
     else {
       const [mm] = expiry.split("/");
       const month = Number(mm);
@@ -87,14 +159,18 @@ const Checkout = () => {
     else if (!/^\d{3,4}$/.test(cvv)) e.cvv = "CVV inválido";
 
     if (!email.trim()) e.email = "Ingresa el correo";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = "Correo inválido";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      e.email = "Correo inválido";
 
     if (!name.trim()) e.name = "Ingresa el nombre completo";
 
-    if (!documentType.trim()) e.documentType = "Selecciona un tipo de documento";
+    if (!documentType.trim())
+      e.documentType = "Selecciona un tipo de documento";
 
-    if (!documentNumber.trim()) e.documentNumber = "Ingresa el número de documento";
-    else if (!/^\d{8,12}$/.test(documentNumber)) e.documentNumber = "Documento inválido";
+    if (!documentNumber.trim())
+      e.documentNumber = "Ingresa el número de documento";
+    else if (!/^\d{8,12}$/.test(documentNumber))
+      e.documentNumber = "Documento inválido";
 
     return e;
   };
@@ -120,7 +196,7 @@ const Checkout = () => {
       const response = await fetch("http://localhost:4000/api/pay", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           cardNumber: cleanCardNumber,
@@ -133,26 +209,26 @@ const Checkout = () => {
           documentNumber: documentNumber.trim(),
           value: Number(grandTotal.toFixed(2)),
           description,
-          referenceCode
-        })
+          referenceCode,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok || data.code !== "0") {
-  console.error("Respuesta backend:", data);
+        console.error("Respuesta backend:", data);
 
-  const payuMessage =
-    data?.payu?.transactionResponse?.responseMessage ||
-    data?.payu?.transactionResponse?.state ||
-    data?.message ||
-    "No fue posible procesar el pago";
+        const payuMessage =
+          data?.payu?.transactionResponse?.responseMessage ||
+          data?.payu?.transactionResponse?.state ||
+          data?.message ||
+          "No fue posible procesar el pago";
 
-  setPaymentErrors({
-    general: payuMessage
-  });
-  return;
-}
+        setPaymentErrors({
+          general: payuMessage,
+        });
+        return;
+      }
 
       setTransactionId(data.transactionId || "");
       setOperationDate(new Date().toLocaleString("es-PE"));
@@ -160,7 +236,7 @@ const Checkout = () => {
     } catch (error) {
       console.error("Error en pago:", error);
       setPaymentErrors({
-        general: "No se pudo conectar con el servicio de pago"
+        general: "No se pudo conectar con el servicio de pago",
       });
     } finally {
       setIsPaying(false);
@@ -246,15 +322,108 @@ const Checkout = () => {
             )}
 
             {step === 1 && (
-              <CheckoutSnacks snacks={snacks} onUpdateSnacks={setSnacks} />
+              <div className="space-y-6">
+                <div className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-4 flex items-center gap-3">
+                  <img
+                    src={canchitaImg}
+                    alt="Canchita"
+                    className="h-10 w-10 object-contain"
+                  />
+                  <p className="font-body text-sm">
+                    ¡Hola! No olvides llevar tus snacks favoritos
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <h2 className="font-display text-xl font-semibold">
+                    ¿Quieres agregar snacks?
+                  </h2>
+                </div>
+
+                {loadingSnacks ? (
+                  <div className="py-10 text-center">
+                    <p className="text-muted-foreground font-body">
+                      Cargando snacks...
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {availableSnacks.map((snack, index) => {
+                      const qty = snacks[snack.id]?.qty || 0;
+                      const badge =
+                        index === 0
+                          ? "Más vendido"
+                          : index === 1
+                          ? "Recomendado"
+                          : "";
+
+                      return (
+                        <div
+                          key={snack.id}
+                          className="rounded-xl border border-border/40 p-3 flex items-center gap-3"
+                        >
+                          <div className="h-20 w-20 rounded-lg overflow-hidden bg-muted shrink-0">
+                            <img
+                              src={snack.image}
+                              alt={snack.name}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            {badge && (
+                              <div className="inline-flex items-center rounded-full bg-yellow-400/90 text-black text-[10px] font-semibold px-2 py-1 mb-2">
+                                <Sparkles size={10} className="mr-1" />
+                                {badge}
+                              </div>
+                            )}
+
+                            <p className="font-display text-sm font-semibold leading-tight">
+                              {snack.name}
+                            </p>
+                            <p className="font-display text-price font-bold">
+                              S/ {snack.priceNum.toFixed(2)}
+                            </p>
+                          </div>
+
+                          {qty === 0 ? (
+                            <button
+                              onClick={() => updateSnackQty(snack, 1)}
+                              className="h-10 w-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0"
+                            >
+                              <Plus size={18} />
+                            </button>
+                          ) : (
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => updateSnackQty(snack, -1)}
+                                className="h-8 w-8 rounded-full bg-muted flex items-center justify-center"
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <span className="font-display text-sm font-bold w-5 text-center">
+                                {qty}
+                              </span>
+                              <button
+                                onClick={() => updateSnackQty(snack, 1)}
+                                className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
 
             {step === 2 && (
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <h2 className="font-display text-xl font-semibold">
-                    Pago
-                  </h2>
+                  <h2 className="font-display text-xl font-semibold">Pago</h2>
                   <p className="text-sm text-muted-foreground font-body">
                     Completa los datos para procesar la compra.
                   </p>
@@ -316,7 +485,9 @@ const Checkout = () => {
                         placeholder="MM/AA"
                         value={expiry}
                         onChange={(e) => {
-                          let value = e.target.value.replace(/\D/g, "").slice(0, 4);
+                          let value = e.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 4);
                           if (value.length > 2) {
                             value = `${value.slice(0, 2)}/${value.slice(2)}`;
                           }
@@ -403,7 +574,9 @@ const Checkout = () => {
                         placeholder="Número de documento"
                         value={documentNumber}
                         onChange={(e) =>
-                          setDocumentNumber(e.target.value.replace(/\D/g, "").slice(0, 12))
+                          setDocumentNumber(
+                            e.target.value.replace(/\D/g, "").slice(0, 12)
+                          )
                         }
                         className={inputClass(!!paymentErrors.documentNumber)}
                       />

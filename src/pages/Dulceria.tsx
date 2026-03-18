@@ -7,14 +7,13 @@ import {
   ChevronRight,
   Sparkles,
 } from "lucide-react";
-import { collection, getDocs, addDoc } from "firebase/firestore"; /* Conectar a Firebase jalar y agregar datos o productos*/
+import { collection, getDocs, addDoc } from "firebase/firestore";
 import { db } from "@/firebase";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import SnackCard from "@/components/SnackCard";
 import { Button } from "@/components/ui/button";
 import canchitaImg from "@/assets/canchita.png";
-
 
 type CandyItem = {
   id: string;
@@ -46,10 +45,22 @@ const Dulceria = () => {
   const [selectedCine, setSelectedCine] = useState("");
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [cineError, setCineError] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   const storedUser = localStorage.getItem("user");
   const user = storedUser ? JSON.parse(storedUser) : null;
   const isLoggedIn = !!user;
+
+  const [cardNumber, setCardNumber] = useState("");
+  const [expiryMonth, setExpiryMonth] = useState("");
+  const [expiryYear, setExpiryYear] = useState("");
+  const [cvv, setCvv] = useState("");
+  const [documentType, setDocumentType] = useState(user?.documentType || "DNI");
+  const [documentNumber, setDocumentNumber] = useState(
+    user?.documentNumber || ""
+  );
+  const [buyerName, setBuyerName] = useState(user?.name || "");
+  const [buyerEmail, setBuyerEmail] = useState(user?.email || "");
 
   useEffect(() => {
     const fetchCandyStore = async () => {
@@ -111,90 +122,135 @@ const Dulceria = () => {
     return s + (item ? item.priceNum * qty : 0);
   }, 0);
 
-  const handleOrder = () => {
-    if (!selectedCine) {
-      setCineError(true);
-      return;
-    }
-
-    setCineError(false);
-    setOrderPlaced(true);
-  };
-
   const resetOrder = () => {
     setCart({});
     setSelectedCine("");
     setOrderPlaced(false);
     setShowCart(false);
     setCineError(false);
+    setCardNumber("");
+    setExpiryMonth("");
+    setExpiryYear("");
+    setCvv("");
   };
 
   const handleCandyPayment = async () => {
-  if (!selectedCine) {
-    setCineError(true);
-    return;
-  }
+    if (!selectedCine) {
+      setCineError(true);
+      return;
+    }
 
-  setCineError(false);
+    if (
+      !cardNumber.trim() ||
+      !expiryMonth.trim() ||
+      !expiryYear.trim() ||
+      !cvv.trim() ||
+      !buyerName.trim() ||
+      !buyerEmail.trim() ||
+      !documentType.trim() ||
+      !documentNumber.trim()
+    ) {
+      alert("Completa todos los datos de pago.");
+      return;
+    }
 
-  const storedUser = localStorage.getItem("user");
-  const user = storedUser ? JSON.parse(storedUser) : null;
+    setCineError(false);
+    setPaying(true);
 
-  const referenceCode = `CANDY-${Date.now()}`;
+    const referenceCode = `CANDY-${Date.now()}`;
 
-  const items = Object.entries(cart)
-    .map(([id, qty]) => {
-      const item = snacksData.find((s) => s.id === id);
-      if (!item) return null;
+    const items = Object.entries(cart)
+      .map(([id, qty]) => {
+        const item = snacksData.find((s) => s.id === id);
+        if (!item) return null;
 
-      return {
-        id: item.id,
-        name: item.name,
-        qty,
-        unitPrice: item.priceNum,
-        subtotal: item.priceNum * qty,
-      };
-    })
-    .filter(Boolean);
+        return {
+          id: item.id,
+          name: item.name,
+          qty,
+          unitPrice: item.priceNum,
+          subtotal: item.priceNum * qty,
+        };
+      })
+      .filter(Boolean);
 
-  const description = items
-    .map((item: any) => `${item.name} x${item.qty}`)
-    .join(", ");
+    const description = items
+      .map((item: any) => `${item.name} x${item.qty}`)
+      .join(", ");
 
-  const payload = {
-    referenceCode,
-    description: `Compra dulcería Cineplanet - ${description}`,
-    value: totalPrice.toFixed(2),
-    cine: selectedCine,
-    items,
-    buyerEmail: user?.email || "invitado@cineplanet.com",
-    name: user?.name || "Invitado Cineplanet",
-    documentType: user?.documentType || "DNI",
-    documentNumber: user?.documentNumber || "00000000",
-  };
-
-  try {
-    await addDoc(collection(db, "complete"), {
-      type: "dulceria",
+    const payload = {
       referenceCode,
+      description: `Compra dulcería Cineplanet - ${description}`,
+      value: totalPrice.toFixed(2),
       cine: selectedCine,
       items,
-      total: Number(totalPrice.toFixed(2)),
-      email: payload.buyerEmail,
-      name: payload.name,
-      dni: payload.documentNumber,
-      operationDate: new Date().toLocaleString("es-PE"),
-      status: "PENDING",
-    });
+      email: buyerEmail,
+      name: buyerName,
+      documentType,
+      documentNumber,
+      cardNumber: cardNumber.replace(/\s/g, ""),
+      expiryMonth,
+      expiryYear,
+      cvv,
+    };
 
-    console.log("Pedido guardado en Firebase:", payload);
-  } catch (error) {
-    console.error("Error guardando pedido en Firebase:", error);
-    return;
-  }
-};
+    try {
+      await addDoc(collection(db, "complete"), {
+        type: "dulceria",
+        referenceCode,
+        cine: selectedCine,
+        items,
+        total: Number(totalPrice.toFixed(2)),
+        email: payload.email,
+        name: payload.name,
+        dni: payload.documentNumber,
+        operationDate: new Date().toLocaleString("es-PE"),
+        status: "PENDING",
+      });
 
- 
+      console.log("Pedido guardado en Firebase:", payload);
+
+      const response = await fetch("http://localhost:4000/api/pay", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cardNumber: payload.cardNumber,
+          expiryYear: payload.expiryYear,
+          expiryMonth: payload.expiryMonth,
+          cvv: payload.cvv,
+          name: payload.name,
+          email: payload.email,
+          documentType: payload.documentType,
+          documentNumber: payload.documentNumber,
+          value: payload.value,
+          description: payload.description,
+          referenceCode: payload.referenceCode,
+        }),
+      });
+
+      const data = await response.json();
+      console.log("Respuesta backend PayU:", data);
+
+      if (response.ok && data?.code === "0") {
+        setOrderPlaced(true);
+        return;
+      }
+
+      alert(
+        data?.message ||
+          data?.payu?.error ||
+          "No se pudo iniciar el pago con PayU."
+      );
+    } catch (error) {
+      console.error("Error guardando pedido o enviando a PayU:", error);
+      alert("Ocurrió un error al procesar el pedido.");
+    } finally {
+      setPaying(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="starfield" />
@@ -460,40 +516,127 @@ const Dulceria = () => {
                     )}
 
                     {Object.keys(cart).length > 0 && (
-                      <div className="pt-4 border-t border-border/40 space-y-3">
-                        <h4 className="font-display font-semibold text-sm">
-                          Retira en:
-                        </h4>
+                      <>
+                        <div className="pt-4 border-t border-border/40 space-y-3">
+                          <h4 className="font-display font-semibold text-sm">
+                            Retira en:
+                          </h4>
 
-                        {cineError && (
-                          <p className="text-sm text-destructive font-body">
-                            Selecciona un cine para continuar
-                          </p>
-                        )}
+                          {cineError && (
+                            <p className="text-sm text-destructive font-body">
+                              Selecciona un cine para continuar
+                            </p>
+                          )}
 
-                        <div className="grid grid-cols-1 gap-2">
-                          {CINES_PICKUP.map((cine) => (
-                            <button
-                              key={cine}
-                              onClick={() => {
-                                setSelectedCine(cine);
-                                setCineError(false);
-                              }}
-                              className={`text-left px-4 py-3 rounded-xl border text-sm font-body transition-all ${
-                                selectedCine === cine
-                                  ? "border-primary bg-primary/10 text-foreground"
-                                  : `border-border/50 text-muted-foreground hover:border-primary/30 ${
-                                      cineError ? "border-destructive/50" : ""
-                                    }`
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <MapPin size={14} /> {cine}
-                              </div>
-                            </button>
-                          ))}
+                          <div className="grid grid-cols-1 gap-2">
+                            {CINES_PICKUP.map((cine) => (
+                              <button
+                                key={cine}
+                                onClick={() => {
+                                  setSelectedCine(cine);
+                                  setCineError(false);
+                                }}
+                                className={`text-left px-4 py-3 rounded-xl border text-sm font-body transition-all ${
+                                  selectedCine === cine
+                                    ? "border-primary bg-primary/10 text-foreground"
+                                    : `border-border/50 text-muted-foreground hover:border-primary/30 ${
+                                        cineError ? "border-destructive/50" : ""
+                                      }`
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <MapPin size={14} /> {cine}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+
+                        <div className="pt-4 border-t border-border/40 space-y-3">
+                          <h4 className="font-display font-semibold text-sm">
+                            Datos de pago
+                          </h4>
+
+                          <input
+                            type="text"
+                            placeholder="Número de tarjeta"
+                            value={cardNumber}
+                            onChange={(e) => setCardNumber(e.target.value)}
+                            className="w-full rounded-xl border border-border/40 bg-background px-4 py-3 text-sm outline-none"
+                          />
+
+                          <div className="grid grid-cols-2 gap-2">
+                          {/* MM/AA */}
+                          <input
+                            type="text"
+                            placeholder="MM/AA"
+                            value={`${expiryMonth}${expiryYear ? "/" + expiryYear.slice(-2) : ""}`}
+                            onChange={(e) => {
+                              let val = e.target.value.replace(/\D/g, "");
+
+                              if (val.length >= 2) {
+                                const month = val.slice(0, 2);
+                                const year = val.slice(2, 4);
+
+                                setExpiryMonth(month);
+                                setExpiryYear(year ? `20${year}` : "");
+                              } else {
+                                setExpiryMonth(val);
+                                setExpiryYear("");
+                              }
+                            }}
+                            maxLength={5}
+                            className="w-full rounded-xl border border-border/40 bg-background px-3 py-3 text-sm outline-none text-center"
+                          />
+
+                          {/* CVV */}
+                          <input
+                            type="text"
+                            placeholder="CVV"
+                            value={cvv}
+                            onChange={(e) => setCvv(e.target.value)}
+                            maxLength={4}
+                            className="w-full rounded-xl border border-border/40 bg-background px-3 py-3 text-sm outline-none text-center"
+                          />
+                        </div>
+
+                          <input
+                            type="text"
+                            placeholder="Correo"
+                            value={buyerEmail}
+                            onChange={(e) => setBuyerEmail(e.target.value)}
+                            className="w-full rounded-xl border border-border/40 bg-background px-4 py-3 text-sm outline-none"
+                          />
+
+                          <input
+                            type="text"
+                            placeholder="Nombre completo"
+                            value={buyerName}
+                            onChange={(e) => setBuyerName(e.target.value)}
+                            className="w-full rounded-xl border border-border/40 bg-background px-4 py-3 text-sm outline-none"
+                          />
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <select
+                              value={documentType}
+                              onChange={(e) => setDocumentType(e.target.value)}
+                              className="w-full rounded-xl border border-border/40 bg-background px-4 py-3 text-sm outline-none"
+                            >
+                              <option value="DNI">DNI</option>
+                              <option value="CE">CE</option>
+                              <option value="PASSPORT">Pasaporte</option>
+                            </select>
+
+                            <input
+                              type="text"
+                              placeholder="Número de documento"
+                              value={documentNumber}
+                              onChange={(e) => setDocumentNumber(e.target.value)}
+                              className="w-full rounded-xl border border-border/40 bg-background px-4 py-3 text-sm outline-none"
+                            />
+                          </div>
+                        </div>
+                      </>
                     )}
                   </div>
 
@@ -508,8 +651,14 @@ const Dulceria = () => {
                         </span>
                       </div>
 
-                      <Button className="w-full" size="lg" onClick={handleCandyPayment}>
-                        Pagar pedido <ChevronRight size={16} />
+                      <Button
+                        className="w-full"
+                        size="lg"
+                        onClick={handleCandyPayment}
+                        disabled={paying}
+                      >
+                        {paying ? "Procesando..." : "Pagar pedido"}{" "}
+                        <ChevronRight size={16} />
                       </Button>
                     </div>
                   )}
@@ -524,4 +673,5 @@ const Dulceria = () => {
     </div>
   );
 };
+
 export default Dulceria;
