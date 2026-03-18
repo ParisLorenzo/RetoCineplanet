@@ -336,42 +336,36 @@ const Dulceria = () => {
             </div>
           )}
 
-          {!isLoggedIn && (
-            <div className="relative mb-10 flex items-center gap-5">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.5 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ type: "spring", duration: 0.6, bounce: 0.3 }}
-                className="shrink-0"
-              >
-                <motion.img
-                  src={canchitaImg}
-                  alt="Canchita"
-                  className="h-18 w-18 object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
-                  animate={{ rotate: [0, 3, -3, 0] }}
-                  transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                />
-              </motion.div>
+              {!isLoggedIn && (
+          <div className="relative mb-10 flex items-center gap-5">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: "spring", duration: 0.6, bounce: 0.3 }}
+              className="shrink-0"
+            >
+              <motion.img
+                src={canchitaImg}
+                alt="Canchita"
+                className="w-16 h-16 sm:w-20 sm:h-20 object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
+              />
+            </motion.div>
 
-              <motion.div
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 }}
-                className="relative bg-card/80 backdrop-blur-sm rounded-2xl rounded-bl-sm px-5 py-3 shadow-lg border border-border/30 flex-1"
-              >
-                <div className="absolute -left-2 top-4 w-0 h-0 border-t-[6px] border-t-transparent border-r-[8px] border-r-card/80 border-b-[6px] border-b-transparent" />
-                <p className="font-body text-sm text-muted-foreground">
-                  <span className="font-semibold text-foreground">¡Hola!</span>{" "}
-                  Inicia sesión para que te recomiende los mejores combos según
-                  tus gustos.
-                </p>
-              </motion.div>
-            </div>
-          )}
+            <motion.div
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+              className="relative bg-card/80 backdrop-blur-sm rounded-2xl rounded-bl-sm px-5 py-3 shadow-lg border border-border/30 flex-1"
+            >
+              <div className="absolute -left-2 top-4 w-0 h-0 border-t-[6px] border-t-transparent border-r-[8px] border-r-card/80 border-b-[6px] border-b-transparent" />
+
+              <p className="font-body text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">¡Hola!</span>{" "}
+                Inicia sesión para que te recomiende los mejores combos según tus gustos.
+              </p>
+            </motion.div>
+          </div>
+        )}
 
           {loading ? (
             <div className="py-16 text-center">
